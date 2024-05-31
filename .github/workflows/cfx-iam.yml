@@ -24,7 +24,7 @@ jobs:
   build:
     name: Build and push image to ACR for init container
     runs-on: ubuntu-latest
-    environment: acr-shared-env
+    environment: entry-acr
     permissions:
       contents: read
       actions: read
