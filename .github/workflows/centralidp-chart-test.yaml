@@ -110,7 +110,6 @@ jobs:
           if ! helm upgrade centralidp charts/centralidp -f charts/values-test-upgrade.yaml --namespace upgrade --debug --wait --timeout=10m --atomic; then
             echo "::Warning::Initial upgrade failed, attempting with --force flag"
             echo "Error occurred during upgrade, retrying with force..."
-
             # Retry with force flag if first attempt fails
             if ! helm upgrade centralidp charts/centralidp -f charts/values-test-upgrade.yaml --namespace upgrade --debug --wait --timeout=10m --atomic --force; then
               echo "::Error::Upgrade failed even with --force flag"
