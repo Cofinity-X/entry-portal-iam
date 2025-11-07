@@ -89,36 +89,179 @@ jobs:
             echo "changed=true" >> $GITHUB_OUTPUT
           fi
 
-      # run chart linting 
+      # run chart linting
       - name: Run chart-testing (lint)
         run: ct lint --charts charts/centralidp --config charts/chart-testing-config.yaml
 
       # define charts to test with the --charts parameter
       - name: Run chart-testing (install)
-        run: helm install centralidp charts/centralidp -f charts/values-test-centralidp.yaml --namespace install --create-namespace --debug
+        run: |
+          echo "Installing centralidp chart..."
+          if ! helm install centralidp charts/centralidp -f charts/values-test-centralidp.yaml --namespace install --create-namespace --debug --wait --timeout=10m; then
+            echo "::error::Chart installation failed"
+            echo "Gathering diagnostic information..."
+
+            # Check pod status
+            echo "Pod Status:"
+            kubectl get pods -n install -o wide || true
+
+            # Check events
+            echo "Namespace Events:"
+            kubectl get events -n install --sort-by='.lastTimestamp' || true
+
+            # Get logs from failed pods
+            echo "Pod Logs:"
+            for pod in $(kubectl get pods -n install --no-headers -o custom-columns=":metadata.name" | grep -v Running || true); do
+              echo "=== Logs for pod: $pod ==="
+              kubectl logs $pod -n install --all-containers=true --previous=true || true
+              kubectl logs $pod -n install --all-containers=true || true
+              echo "=== Describe pod: $pod ==="
+              kubectl describe pod $pod -n install || true
+            done
+
+            exit 1
+          fi
+          echo "Chart installation successful"
         if: github.event_name != 'pull_request' || steps.list-changed.outputs.changed == 'true'
 
         # Upgrade the released centralidp chart version with the locally available chart
       - name: Run helm upgrade
         run: |
+          echo "Starting helm upgrade test..."
           helm repo add bitnami-full-index https://raw.githubusercontent.com/bitnami/charts/archive-full-index/bitnami
           helm repo add tractusx-dev https://eclipse-tractusx.github.io/charts/dev
           helm repo update
-          helm install centralidp tractusx-dev/centralidp -f charts/values-test-upgrade.yaml --version ${{ github.event.inputs.upgrade_from || '2.1.0' }} --namespace upgrade --create-namespace --debug --wait --timeout=10m
+
+          echo "Installing base version ${{ github.event.inputs.upgrade_from || '2.1.0' }}..."
+          if ! helm install centralidp tractusx-dev/centralidp -f charts/values-test-upgrade.yaml --version ${{ github.event.inputs.upgrade_from || '2.1.0' }} --namespace upgrade --create-namespace --debug --wait --timeout=10m; then
+            echo "::error::Base version installation failed"
+            echo "Gathering diagnostic information for base installation..."
+
+            # Check pod status
+            echo "Pod Status:"
+            kubectl get pods -n upgrade -o wide || true
+
+            # Check events
+            echo "Namespace Events:"
+            kubectl get events -n upgrade --sort-by='.lastTimestamp' || true
+
+            # Get logs from failed pods
+            echo "Pod Logs:"
+            for pod in $(kubectl get pods -n upgrade --no-headers -o custom-columns=":metadata.name" 2>/dev/null || true); do
+              echo "=== Logs for pod: $pod ==="
+              kubectl logs $pod -n upgrade --all-containers=true --previous=true 2>/dev/null || true
+              kubectl logs $pod -n upgrade --all-containers=true 2>/dev/null || true
+              echo "=== Describe pod: $pod ==="
+              kubectl describe pod $pod -n upgrade || true
+            done
+
+            exit 1
+          fi
+
+          echo "Base version installed successfully"
           helm dependency update charts/centralidp
+
+          echo "Attempting upgrade..."
           # First attempt upgrade without force
           if ! helm upgrade centralidp charts/centralidp -f charts/values-test-upgrade.yaml --namespace upgrade --debug --wait --timeout=10m --atomic; then
-            echo "::Warning::Initial upgrade failed, attempting with --force flag"
-            echo "Error occurred during upgrade, retrying with force..."
+            echo "::warning::Initial upgrade failed, attempting with --force flag"
+            echo "Gathering diagnostic information before retry..."
+
+            # Check current state
+            echo "Current Pod Status:"
+            kubectl get pods -n upgrade -o wide || true
+
+            echo "Recent Events:"
+            kubectl get events -n upgrade --sort-by='.lastTimestamp' | tail -20 || true
+
+            # Get logs from problematic pods
+            echo "Current Pod Logs:"
+            for pod in $(kubectl get pods -n upgrade --no-headers -o custom-columns=":metadata.name" 2>/dev/null || true); do
+              if [[ $(kubectl get pod $pod -n upgrade -o jsonpath='{.status.phase}' 2>/dev/null) != "Running" ]]; then
+                echo "=== Logs for non-running pod: $pod ==="
+                kubectl logs $pod -n upgrade --all-containers=true --previous=true 2>/dev/null || true
+                kubectl logs $pod -n upgrade --all-containers=true 2>/dev/null || true
+                kubectl describe pod $pod -n upgrade || true
+              fi
+            done
+
+            echo "Retrying with --force flag..."
             # Retry with force flag if first attempt fails
             if ! helm upgrade centralidp charts/centralidp -f charts/values-test-upgrade.yaml --namespace upgrade --debug --wait --timeout=10m --atomic --force; then
-              echo "::Error::Upgrade failed even with --force flag"
+              echo "::error::Upgrade failed even with --force flag"
+              echo "Final diagnostic information..."
+
+              # Comprehensive diagnostics for complete failure
+              echo "Final Pod Status:"
+              kubectl get pods -n upgrade -o wide || true
+
+              echo "All Events:"
+              kubectl get events -n upgrade --sort-by='.lastTimestamp' || true
+
+              echo "StatefulSet Status:"
+              kubectl get statefulset -n upgrade -o wide || true
+              kubectl describe statefulset -n upgrade || true
+
+              echo "Service Status:"
+              kubectl get svc -n upgrade -o wide || true
+
+              echo "PVC Status:"
+              kubectl get pvc -n upgrade -o wide || true
+
+              echo "All Pod Logs:"
+              for pod in $(kubectl get pods -n upgrade --no-headers -o custom-columns=":metadata.name" 2>/dev/null || true); do
+                echo "=== Complete logs for pod: $pod ==="
+                kubectl logs $pod -n upgrade --all-containers=true --previous=true 2>/dev/null || true
+                kubectl logs $pod -n upgrade --all-containers=true 2>/dev/null || true
+                echo "=== Complete describe for pod: $pod ==="
+                kubectl describe pod $pod -n upgrade || true
+                echo "=========================="
+              done
+
+              # Check for common issues
+              echo "Checking for common issues..."
+              kubectl get events -n upgrade --field-selector type=Warning || true
+
               echo "Both normal and forced upgrade attempts failed"
-              exit 0
+              exit 1
             else
-              echo "::Info::Upgrade succeeded with --force flag"
+              echo "::notice::Upgrade succeeded with --force flag"
+              echo "Final verification..."
+              kubectl get pods -n upgrade -o wide
+              echo "Upgrade completed successfully using --force flag"
             fi
           else
-            echo "::Info::Upgrade succeeded without force"
+            echo "::notice::Upgrade succeeded without force"
+            echo "Final verification..."
+            kubectl get pods -n upgrade -o wide
+            echo "Upgrade completed successfully without --force flag"
           fi
+        if: github.event_name != 'pull_request' || steps.list-changed.outputs.changed == 'true'
+
+      # Post-upgrade verification
+      - name: Verify upgrade success
+        run: |
+          echo "Verifying upgrade success..."
+
+          # Wait for pods to be ready
+          echo "Waiting for pods to be ready..."
+          kubectl wait --for=condition=Ready pods --all -n upgrade --timeout=300s || true
+
+          # Check final status
+          echo "Final Pod Status:"
+          kubectl get pods -n upgrade -o wide
+
+          # Check Helm release status
+          echo "Helm Release Status:"
+          helm status centralidp -n upgrade
+
+          # Test basic connectivity if possible
+          echo "Testing basic service connectivity..."
+          kubectl get svc -n upgrade
+
+          # Check for any remaining issues
+          echo "Checking for any warnings or errors..."
+          kubectl get events -n upgrade --field-selector type=Warning | tail -10 || true
+
+          echo "Verification completed"
         if: github.event_name != 'pull_request' || steps.list-changed.outputs.changed == 'true'
