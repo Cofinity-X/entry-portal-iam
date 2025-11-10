@@ -43,7 +43,9 @@ helm repo add tractusx-dev https://eclipse-tractusx.github.io/charts/dev
 helm repo update
 
 echo "Installing base version $BASE_VERSION..."
-if ! helm install "$CHART_NAME" "tractusx-dev/$CHART_NAME" -f "$VALUES_FILE" --version "$BASE_VERSION" --namespace "$NAMESPACE" --create-namespace --debug --wait --timeout=10m; then
+if ! helm install "$CHART_NAME" "tractusx-dev/$CHART_NAME" -f "$VALUES_FILE" --version "$BASE_VERSION" --namespace "$NAMESPACE" --create-namespace --debug --wait --timeout=10m \
+  --set keycloak.image.repository=bitnamilegacy/keycloak \
+  --set keycloak.postgresql.image.repository=bitnamilegacy/postgresql; then
   echo "::error::Base version installation failed"
   echo "Gathering diagnostic information for base installation..."
   
