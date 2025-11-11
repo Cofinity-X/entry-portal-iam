@@ -43,20 +43,26 @@ helm repo add tractusx-dev https://eclipse-tractusx.github.io/charts/dev
 helm repo update
 
 echo "Installing base version $BASE_VERSION..."
-if ! helm install "$CHART_NAME" "tractusx-dev/$CHART_NAME" -f "$VALUES_FILE" --version "$BASE_VERSION" --namespace "$NAMESPACE" --create-namespace --debug --wait --timeout=10m \
+if ! helm install "$CHART_NAME" "tractusx-dev/$CHART_NAME" -f "$VALUES_FILE" --version "$BASE_VERSION" --namespace "$NAMESPACE" --create-namespace --debug --wait --timeout=15m \
+  --set keycloak.image.registry=docker.io \
   --set keycloak.image.repository=bitnamilegacy/keycloak \
-  --set keycloak.postgresql.image.repository=bitnamilegacy/postgresql; then
+  --set keycloak.postgresql.image.registry=docker.io \
+  --set keycloak.postgresql.image.repository=bitnamilegacy/postgresql \
+  --set keycloak.postgresql.primary.initdb.scripts."init\.sql"="CREATE SCHEMA IF NOT EXISTS keycloak;" \
+  --set keycloak.startupProbe.initialDelaySeconds=60 \
+  --set keycloak.startupProbe.periodSeconds=10 \
+  --set keycloak.startupProbe.failureThreshold=30; then
   echo "::error::Base version installation failed"
   echo "Gathering diagnostic information for base installation..."
-  
+
   # Check pod status
   echo "Pod Status:"
   kubectl get pods -n "$NAMESPACE" -o wide || true
-  
+
   # Check events
   echo "Namespace Events:"
   kubectl get events -n "$NAMESPACE" --sort-by='.lastTimestamp' || true
-  
+
   # Get logs from failed pods
   echo "Pod Logs:"
   for pod in $(kubectl get pods -n "$NAMESPACE" --no-headers -o custom-columns=":metadata.name" 2>/dev/null || true); do

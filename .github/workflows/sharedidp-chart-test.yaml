@@ -89,7 +89,7 @@ jobs:
             echo "changed=true" >> $GITHUB_OUTPUT
           fi
 
-      # run chart linting 
+      # Run chart linting
       - name: Run chart-testing (lint)
         run: ct lint --charts charts/sharedidp --config charts/chart-testing-config.yaml
 
@@ -98,7 +98,7 @@ jobs:
         run: ./.github/ci_scripts/helm-install-with-diagnostics.sh sharedidp charts/sharedidp charts/values-test-sharedidp.yaml install
         if: github.event_name != 'pull_request' || steps.list-changed.outputs.changed == 'true'
 
-        # Upgrade the released sharedidp chart version with the locally available chart
+      # Upgrade the released sharedidp chart version with the locally available chart
       - name: Run helm upgrade
         run: ./.github/ci_scripts/helm-upgrade-with-diagnostics.sh sharedidp charts/sharedidp charts/values-test-upgrade.yaml upgrade ${{ github.event.inputs.upgrade_from || '2.1.0' }}
         if: github.event_name != 'pull_request' || steps.list-changed.outputs.changed == 'true'
