@@ -46,13 +46,11 @@ echo "Installing base version $BASE_VERSION..."
 if ! helm install "$CHART_NAME" "tractusx-dev/$CHART_NAME" -f "$VALUES_FILE" --version "$BASE_VERSION" --namespace "$NAMESPACE" --create-namespace --debug --wait --timeout=15m \
   --set keycloak.image.registry=docker.io \
   --set keycloak.image.repository=bitnamilegacy/keycloak \
-  --set keycloak.image.tag=22.0.3-debian-11-r14 \
   --set keycloak.postgresql.image.registry=docker.io \
   --set keycloak.postgresql.image.repository=bitnamilegacy/postgresql \
-  --set keycloak.postgresql.image.tag=15.4.0-debian-11-r45 \
-  --set keycloak.startupProbe.initialDelaySeconds=60 \
-  --set keycloak.startupProbe.periodSeconds=10 \
-  --set keycloak.startupProbe.failureThreshold=30; then
+  --set keycloak.startupProbe.enabled=false \
+  --set keycloak.livenessProbe.initialDelaySeconds=600 \
+  --set keycloak.readinessProbe.initialDelaySeconds=300; then
   echo "::error::Base version installation failed"
   echo "Gathering diagnostic information for base installation..."
 
