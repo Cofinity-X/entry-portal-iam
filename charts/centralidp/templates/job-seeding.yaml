@@ -269,6 +269,10 @@ spec:
           command: [ 'sh', '-c', 'until curl -s http://{{ template "centralidp.fullname" . }}:{{ .Values.realmSeeding.keycloakServicePort }}/auth/realms/master/.well-known/openid-configuration; do echo waiting for other pod; sleep 2; done;' ]
           {{- end }}
           imagePullPolicy: IfNotPresent
+      {{- if .Values.realmSeeding.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml .Values.realmSeeding.imagePullSecrets | nindent 8 }}
+      {{- end }}
       volumes:
         - name: realms
           emptyDir: {}
